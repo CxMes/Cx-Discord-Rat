@@ -1,6 +1,8 @@
 # Cx-Discord-Rat
 full erişilebilir discord rat
 
+SADECE WİNDOWSTA ÇALIŞIR!!!!!
+
 ilk olarak çalıştırmak için gerekli kütüphaneleri yüklemeniz lazım bunu için :
 pip install -r req.txt
 
