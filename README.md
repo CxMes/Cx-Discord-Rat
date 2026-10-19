@@ -1,4 +1,5 @@
 # Cx-Discord-Rat
+SORUMLULUK BANA AİTTİR DEĞİL KİM KULLANIYOSA ONUN PROBLEMİDİR
 full erişilebilir discord rat
 
 SADECE WİNDOWSTA ÇALIŞIR!!!!!
